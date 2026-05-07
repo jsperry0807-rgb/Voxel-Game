@@ -4,4 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-voxel_core = { path = "../voxel_core" }
+voxel_core = { path = "../voxel_core", features = ["bevy"] }
+bevy = "0.18"
+bevy_mesh = "0.18"

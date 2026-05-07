@@ -2,6 +2,7 @@ use crate::chunk::Chunk;
 use crate::coordinate::ChunkCoordinate;
 use rustc_hash::FxHashMap;
 
+#[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
 pub struct World {
     pub chunks: FxHashMap<ChunkCoordinate, Chunk>,
     pub settings: WorldSettings,
