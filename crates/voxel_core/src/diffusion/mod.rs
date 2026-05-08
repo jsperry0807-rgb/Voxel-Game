@@ -1,4 +1,5 @@
 pub mod heat;
+pub mod thermal;
 
 use crate::{
     chunk::Chunk,
