@@ -8,13 +8,8 @@ use crate::{
 const S: usize = CHUNK_SIZE as usize;
 const VOLUME: usize = S * S * S;
 
-/// Jacobi iteration heat diffusion over the 6-neighborhood von Neumann stencil.
-/// Uses double-buffering: reads from current state, writes into scratch,
-/// then swaps — zero allocation per step after first call.
 pub struct HeatDiffusionSolver {
-    /// Fraction of the temperature difference that moves per unit time.
     pub coefficient: f32,
-    /// Maximum allowed temperature (clamp ceiling).
     pub max_temperature: f32,
 }
 
@@ -40,33 +35,35 @@ impl DiffusionSolver for HeatDiffusionSolver {
         ctx: &DiffusionContext,
     ) -> DiffusionResult {
         let start = std::time::Instant::now();
-
-        // Activate diffusion state if first time
         chunk.activate_diffusion();
 
         let diff = chunk.diffusion.as_ref().unwrap();
-
-        // Scratch buffer — cloned from current state
         let mut scratch: Vec<VoxelDiffusionState> = diff.to_vec();
-
         let mut cells_modified: u64 = 0;
+
+        // Pre-fetch border diffusion strips for all 6 faces
+        let border_px = borders.get(coord, Face::PosX);
+        let border_nx = borders.get(coord, Face::NegX);
+        let border_py = borders.get(coord, Face::PosY);
+        let border_ny = borders.get(coord, Face::NegY);
+        let border_pz = borders.get(coord, Face::PosZ);
+        let border_nz = borders.get(coord, Face::NegZ);
 
         for z in 0..S {
             for y in 0..S {
                 for x in 0..S {
-                    let center_idx = x + y * S + z * S * S;
+                    let center_i = x + y * S + z * S * S;
 
-                    // Only diffuse through solid or fluid voxels
-                    if chunk.materials[center_idx] == VoxelMaterial::Air {
+                    if chunk.materials[center_i] == VoxelMaterial::Air {
                         continue;
                     }
 
-                    let center_temp = diff[center_idx].temperature;
+                    let center_temp = diff[center_i].temperature;
                     let mut neighbor_sum = 0.0f32;
                     let mut neighbor_count = 0u32;
 
-                    // ── Interior neighbors (same chunk) ──────────────────────
-                    macro_rules! interior_neighbor {
+                    // ── Interior neighbors ─────────────────────────────────
+                    macro_rules! add_interior {
                         ($nx:expr, $ny:expr, $nz:expr) => {
                             let ni = $nx + $ny * S + $nz * S * S;
                             if chunk.materials[ni] != VoxelMaterial::Air {
@@ -77,60 +74,62 @@ impl DiffusionSolver for HeatDiffusionSolver {
                     }
 
                     if x + 1 < S {
-                        interior_neighbor!(x + 1, y, z);
+                        add_interior!(x + 1, y, z);
                     }
                     if x > 0 {
-                        interior_neighbor!(x - 1, y, z);
+                        add_interior!(x - 1, y, z);
                     }
                     if y + 1 < S {
-                        interior_neighbor!(x, y + 1, z);
+                        add_interior!(x, y + 1, z);
                     }
                     if y > 0 {
-                        interior_neighbor!(x, y - 1, z);
+                        add_interior!(x, y - 1, z);
                     }
                     if z + 1 < S {
-                        interior_neighbor!(x, y, z + 1);
+                        add_interior!(x, y, z + 1);
                     }
                     if z > 0 {
-                        interior_neighbor!(x, y, z - 1);
+                        add_interior!(x, y, z - 1);
                     }
 
-                    // ── Border neighbors (adjacent chunks via snapshot) ───────
-                    if x == 0 {
-                        if let Some(strip) = borders.get(coord, Face::NegX) {
-                            neighbor_sum += strip[y + z * S].temperature_or(0.0);
-                            neighbor_count += 1;
-                        }
+                    // ── Border neighbors (cross-chunk) ─────────────────────
+                    // Strip layout: PosX/NegX → u=y, v=z
+                    //               PosY/NegY → u=x, v=z
+                    //               PosZ/NegZ → u=x, v=y
+                    macro_rules! add_border {
+                        ($strip_opt:expr, $u:expr, $v:expr) => {
+                            if let Some(strip) = $strip_opt {
+                                let bi = $u + $v * S;
+                                if strip.materials[bi] != VoxelMaterial::Air {
+                                    let temp = strip
+                                        .diffusion
+                                        .as_ref()
+                                        .map(|d| d[bi].temperature)
+                                        .unwrap_or(0.0);
+                                    neighbor_sum += temp;
+                                    neighbor_count += 1;
+                                }
+                            }
+                        };
                     }
+
                     if x == S - 1 {
-                        if let Some(strip) = borders.get(coord, Face::PosX) {
-                            neighbor_sum += strip[y + z * S].temperature_or(0.0);
-                            neighbor_count += 1;
-                        }
+                        add_border!(border_px, y, z);
                     }
-                    if y == 0 {
-                        if let Some(strip) = borders.get(coord, Face::NegY) {
-                            neighbor_sum += strip[x + z * S].temperature_or(0.0);
-                            neighbor_count += 1;
-                        }
+                    if x == 0 {
+                        add_border!(border_nx, y, z);
                     }
                     if y == S - 1 {
-                        if let Some(strip) = borders.get(coord, Face::PosY) {
-                            neighbor_sum += strip[x + z * S].temperature_or(0.0);
-                            neighbor_count += 1;
-                        }
+                        add_border!(border_py, x, z);
                     }
-                    if z == 0 {
-                        if let Some(strip) = borders.get(coord, Face::NegZ) {
-                            neighbor_sum += strip[x + y * S].temperature_or(0.0);
-                            neighbor_count += 1;
-                        }
+                    if y == 0 {
+                        add_border!(border_ny, x, z);
                     }
                     if z == S - 1 {
-                        if let Some(strip) = borders.get(coord, Face::PosZ) {
-                            neighbor_sum += strip[x + y * S].temperature_or(0.0);
-                            neighbor_count += 1;
-                        }
+                        add_border!(border_pz, x, y);
+                    }
+                    if z == 0 {
+                        add_border!(border_nz, x, y);
                     }
 
                     if neighbor_count == 0 {
@@ -142,17 +141,16 @@ impl DiffusionSolver for HeatDiffusionSolver {
                     let new_temp = (center_temp + self.coefficient * delta * ctx.dt)
                         .clamp(0.0, self.max_temperature);
 
-                    // Only count as modified if meaningfully changed
                     if (new_temp - center_temp).abs() > f32::EPSILON {
                         cells_modified += 1;
                     }
 
-                    scratch[center_idx].temperature = new_temp;
+                    scratch[center_i].temperature = new_temp;
                 }
             }
         }
 
-        // Swap scratch back into chunk
+        // Write scratch back
         let diff_mut = chunk.diffusion.as_mut().unwrap();
         for i in 0..VOLUME {
             diff_mut[i].temperature = scratch[i].temperature;
@@ -162,24 +160,6 @@ impl DiffusionSolver for HeatDiffusionSolver {
             cells_modified,
             material_transferred: 0.0,
             execution_time_us: start.elapsed().as_micros() as u64,
-        }
-    }
-}
-
-// Helper trait to safely read temperature from a border material strip.
-// Border snapshots store VoxelMaterial, not VoxelDiffusionState, so we
-// treat non-air border voxels as having 0 temperature (cold boundary).
-trait TemperatureOrDefault {
-    fn temperature_or(&self, default: f32) -> f32;
-}
-
-impl TemperatureOrDefault for VoxelMaterial {
-    fn temperature_or(&self, default: f32) -> f32 {
-        // Border snapshot only has material type, not diffusion state.
-        // Air borders contribute nothing; solid borders act as cold sinks.
-        match self {
-            VoxelMaterial::Air => default,
-            _ => default, // cold boundary condition
         }
     }
 }

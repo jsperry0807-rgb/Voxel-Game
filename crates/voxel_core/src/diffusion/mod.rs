@@ -4,18 +4,16 @@ pub mod thermal;
 use crate::{
     chunk::Chunk,
     coordinate::{CHUNK_SIZE, ChunkCoordinate},
-    voxel::VoxelMaterial,
+    voxel::{VoxelDiffusionState, VoxelMaterial},
+    world::World,
 };
 use rustc_hash::FxHashMap;
 
-// ── Context passed to every solver step ───────────────────────────────────────
+// ── Context ────────────────────────────────────────────────────────────────────
 
 pub struct DiffusionContext {
-    /// Timestep in sec
     pub dt: f32,
-    /// Gravitational acceleration (negative = downward).
     pub gravity: f32,
-    /// Rainfall rate for hydraulic erosion (units/second).
     pub rainfall_rate: f32,
 }
 
@@ -29,7 +27,7 @@ impl Default for DiffusionContext {
     }
 }
 
-// ── Per-step statistics ────────────────────────────────────────────────────────
+// ── Result ─────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Default)]
 pub struct DiffusionResult {
@@ -38,11 +36,8 @@ pub struct DiffusionResult {
     pub execution_time_us: u64,
 }
 
-// ── Border snapshot ────────────────────────────────────────────────────────────
+// ── Face ───────────────────────────────────────────────────────────────────────
 
-const FACE_VOXEL_COUNT: usize = (CHUNK_SIZE * CHUNK_SIZE) as usize;
-
-/// One face direction on a chunk boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Face {
     PosX,
@@ -62,21 +57,60 @@ impl Face {
         Face::PosZ,
         Face::NegZ,
     ];
+
+    /// The face on the neighbor chunk that faces back toward us.
+    pub fn opposite(self) -> Self {
+        match self {
+            Face::PosX => Face::NegX,
+            Face::NegX => Face::PosX,
+            Face::PosY => Face::NegY,
+            Face::NegY => Face::PosY,
+            Face::PosZ => Face::NegZ,
+            Face::NegZ => Face::PosZ,
+        }
+    }
 }
 
-/// The key into the border map: which chunk, which face of that chunk.
+// ── Border strip types ─────────────────────────────────────────────────────────
+
+const FACE_SIZE: usize = (CHUNK_SIZE * CHUNK_SIZE) as usize;
+
+/// One face-strip's worth of material + diffusion state from a neighbor chunk.
+#[derive(Clone)]
+pub struct BorderStrip {
+    pub materials: Box<[VoxelMaterial; FACE_SIZE]>,
+    pub diffusion: Option<Box<[VoxelDiffusionState; FACE_SIZE]>>,
+}
+
+impl BorderStrip {
+    fn new_air() -> Self {
+        Self {
+            materials: Box::new([VoxelMaterial::Air; FACE_SIZE]),
+            diffusion: None,
+        }
+    }
+}
+
+// ── Border snapshot ────────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BorderKey {
     pub coord: ChunkCoordinate,
     pub face: Face,
 }
 
-/// Read-only snapshot of 1-voxel border strips extracted from neighbor chunks.
-/// Prevents cross-chunk read/write data races during parallel diffusion steps.
+/// Read-only snapshot of 1-voxel border strips from all neighbor chunks.
+///
+/// Captures both `VoxelMaterial` and `VoxelDiffusionState` so solvers can
+/// correctly handle cross-chunk heat flow and erosion handoff.
+///
+/// Layout convention for strip arrays (u, v):
+///   PosX / NegX : u = y, v = z
+///   PosY / NegY : u = x, v = z
+///   PosZ / NegZ : u = x, v = y
 #[derive(Default)]
 pub struct BorderSnapshot {
-    /// Maps (chunk coordinate + face) → flat array of CHUNK_SIZE² materials.
-    pub data: FxHashMap<BorderKey, Box<[VoxelMaterial; FACE_VOXEL_COUNT]>>,
+    pub strips: FxHashMap<BorderKey, BorderStrip>,
 }
 
 impl BorderSnapshot {
@@ -84,56 +118,83 @@ impl BorderSnapshot {
         Self::default()
     }
 
-    /// Extract border strips from all chunks in `world_chunks` that are
-    /// adjacent to any coordinate in `active`.
-    pub fn capture(
-        world_chunks: &FxHashMap<ChunkCoordinate, Chunk>,
-        active: &[ChunkCoordinate],
-    ) -> Self {
+    /// Capture border strips from all neighbors of each chunk in `active`.
+    /// Only chunks present in `world.chunks` contribute — missing neighbors
+    /// produce air strips with no diffusion state.
+    pub fn capture(world: &World, active: &[ChunkCoordinate]) -> Self {
         let mut snap = Self::new();
         let size = CHUNK_SIZE as usize;
 
         for &coord in active {
             for face in Face::ALL {
+                let key = BorderKey { coord, face };
+                if snap.strips.contains_key(&key) {
+                    continue;
+                }
+
                 let neighbor_coord = neighbor_of(coord, face);
-                let Some(neighbor) = world_chunks.get(&neighbor_coord) else {
+                let Some(neighbor) = world.chunks.get(&neighbor_coord) else {
+                    // No neighbor loaded — insert air strip as cold boundary
+                    snap.strips.insert(key, BorderStrip::new_air());
                     continue;
                 };
 
-                let key = BorderKey { coord, face };
-                if snap.data.contains_key(&key) {
-                    continue;
+                let mut strip = BorderStrip::new_air();
+
+                // Extract the 1-voxel border from the neighbor chunk that
+                // faces back toward `coord` (the opposite face).
+                let neighbor_face = face.opposite();
+
+                let has_diffusion = neighbor.diffusion.is_some();
+                if has_diffusion {
+                    strip.diffusion = Some(Box::new([VoxelDiffusionState::default(); FACE_SIZE]));
                 }
 
-                let mut strip = Box::new([VoxelMaterial::Air; FACE_VOXEL_COUNT]);
                 for u in 0..size {
                     for v in 0..size {
-                        let (nx, ny, nz) = border_voxel_in_neighbor(face, u, v, size);
-                        let src_idx = nx + ny * size + nz * size * size;
-                        strip[u + v * size] = neighbor.materials[src_idx];
+                        let (nx, ny, nz) = border_voxel(neighbor_face, u, v, size);
+                        let src = nx + ny * size + nz * size * size;
+                        let dst = u + v * size;
+
+                        strip.materials[dst] = neighbor.materials[src];
+
+                        if let (Some(ndiff), Some(sdiff)) =
+                            (&neighbor.diffusion, &mut strip.diffusion)
+                        {
+                            sdiff[dst] = ndiff[src];
+                        }
                     }
                 }
-                snap.data.insert(key, strip);
+
+                snap.strips.insert(key, strip);
             }
         }
 
         snap
     }
 
-    /// Look up a border strip. Returns None if the neighbor chunk wasn't loaded.
-    pub fn get(
-        &self,
-        coord: ChunkCoordinate,
-        face: Face,
-    ) -> Option<&[VoxelMaterial; FACE_VOXEL_COUNT]> {
-        self.data
-            .get(&BorderKey { coord, face })
-            .map(|b| b.as_ref())
+    pub fn get(&self, coord: ChunkCoordinate, face: Face) -> Option<&BorderStrip> {
+        self.strips.get(&BorderKey { coord, face })
     }
 }
 
-/// Given a face direction, return the neighbor chunk coordinate.
-fn neighbor_of(coord: ChunkCoordinate, face: Face) -> ChunkCoordinate {
+// ── Solver trait ───────────────────────────────────────────────────────────────
+
+pub trait DiffusionSolver: Send + Sync {
+    fn name(&self) -> &'static str;
+
+    fn step(
+        &self,
+        chunk: &mut Chunk,
+        coord: ChunkCoordinate,
+        borders: &BorderSnapshot,
+        ctx: &DiffusionContext,
+    ) -> DiffusionResult;
+}
+
+// ── Geometry helpers ───────────────────────────────────────────────────────────
+
+pub fn neighbor_of(coord: ChunkCoordinate, face: Face) -> ChunkCoordinate {
     use glam::IVec3;
     let offset = match face {
         Face::PosX => IVec3::X,
@@ -146,34 +207,23 @@ fn neighbor_of(coord: ChunkCoordinate, face: Face) -> ChunkCoordinate {
     ChunkCoordinate(coord.0 + offset)
 }
 
-/// Given a face and (u, v) coordinates in the strip, return the (x, y, z)
-/// index of the border voxel *inside the neighbor chunk*.
-fn border_voxel_in_neighbor(face: Face, u: usize, v: usize, size: usize) -> (usize, usize, usize) {
+/// Given a face direction and (u, v) strip coordinates, return the (x, y, z)
+/// voxel index on that face of the chunk.
+///
+///   PosX face: x = S-1, u = y, v = z
+///   NegX face: x = 0,   u = y, v = z
+///   PosY face: y = S-1, u = x, v = z
+///   NegY face: y = 0,   u = x, v = z
+///   PosZ face: z = S-1, u = x, v = y
+///   NegZ face: z = 0,   u = x, v = y
+pub fn border_voxel(face: Face, u: usize, v: usize, size: usize) -> (usize, usize, usize) {
     let last = size - 1;
     match face {
-        // Our +X face looks at neighbor's x=0 strip
-        Face::PosX => (0, u, v),
-        // Our -X face looks at neighbor's x=last strip
-        Face::NegX => (last, u, v),
-        Face::PosY => (u, 0, v),
-        Face::NegY => (u, last, v),
-        Face::PosZ => (u, v, 0),
-        Face::NegZ => (u, v, last),
+        Face::PosX => (last, u, v),
+        Face::NegX => (0, u, v),
+        Face::PosY => (u, last, v),
+        Face::NegY => (u, 0, v),
+        Face::PosZ => (u, v, last),
+        Face::NegZ => (u, v, 0),
     }
-}
-
-// ── Solver trait ───────────────────────────────────────────────────────────────
-
-/// A diffusion or erosion algorithm that operates on chunk voxel data.
-/// Implementations must be `Send + Sync` to allow parallel execution.
-pub trait DiffusionSolver: Send + Sync {
-    fn name(&self) -> &'static str;
-
-    fn step(
-        &self,
-        chunk: &mut Chunk,
-        coord: ChunkCoordinate,
-        borders: &BorderSnapshot,
-        ctx: &DiffusionContext,
-    ) -> DiffusionResult;
 }
