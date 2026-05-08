@@ -1,7 +1,9 @@
 use crate::chunk::Chunk;
 use crate::coordinate::ChunkCoordinate;
-use bevy::log::tracing;
 use rustc_hash::FxHashMap;
+
+#[cfg(feature = "bevy")]
+use bevy::log::tracing;
 
 #[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
 pub struct World {
@@ -42,8 +44,9 @@ impl World {
         std::mem::take(&mut self.dirty_queue)
     }
 
-    pub fn reload_material_definitions(&mut self, material_count: usize) {
-        tracing::info!("Reloading {} material definitions", material_count);
+    pub fn reload_material_definitions(&mut self, _material_count: usize) {
+        #[cfg(feature = "bevy")]
+        tracing::info!("Reloading {} material definitions", _material_count);
     }
 }
 

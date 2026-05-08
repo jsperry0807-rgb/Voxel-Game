@@ -1,13 +1,15 @@
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[repr(u16)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum VoxelMaterial {
     #[default]
     Air = 0,
-    Stone,
-    Dirt,
-    Sand,
-    Grass,
-    Water,
+    Stone = 1,
+    Dirt = 2,
+    Sand = 3,
+    Grass = 4,
+    Water = 5,
 }
 
 impl VoxelMaterial {
