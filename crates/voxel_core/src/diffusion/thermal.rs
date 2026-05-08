@@ -7,22 +7,9 @@ use crate::{
 
 const S: usize = CHUNK_SIZE as usize;
 
-/// Thermal erosion using the talus angle model.
-///
-/// For each surface voxel pair: if the height difference between two adjacent
-/// solid columns exceeds `talus_threshold` (in voxels), material moves from
-/// the taller column to the shorter one at `erosion_rate`.
-///
-/// This models how loose material (sand, dirt) slides downhill until a stable
-/// angle of repose is reached. Stone is more resistant than sand.
 pub struct ThermalErosionSolver {
-    /// Max stable height difference between adjacent columns before erosion
-    /// begins. 1.0 = 45°, 0.5 = shallower, 2.0 = steeper.
     pub talus_threshold: f32,
-    /// Fraction of excess height difference to move per step (0.0–1.0).
-    /// Values above 0.5 can cause oscillation.
     pub erosion_rate: f32,
-    /// Materials that can be eroded.
     pub erodable: &'static [VoxelMaterial],
 }
 
@@ -41,19 +28,23 @@ impl Default for ThermalErosionSolver {
 }
 
 impl ThermalErosionSolver {
-    fn is_erodable(&self, material: VoxelMaterial) -> bool {
-        self.erodable.contains(&material)
+    #[inline]
+    fn is_erodable(&self, mat: VoxelMaterial) -> bool {
+        self.erodable.contains(&mat)
     }
 
-    /// Linearize (x, y, z) → flat index. Matches VoxelIndex::linearize.
-    /// Layout: x + y * S + z * S * S
+    /// chunk voxel index: x + y*S + z*S*S
     #[inline]
     fn idx(x: usize, y: usize, z: usize) -> usize {
         x + y * S + z * S * S
     }
 
-    /// Find the topmost solid voxel in a column (x, z), searching downward
-    /// from the top of the chunk. Returns None if the column is all air.
+    /// heights flat index: x + z*S  (separate from chunk layout)
+    #[inline]
+    fn hidx(x: usize, z: usize) -> usize {
+        x + z * S
+    }
+
     fn column_height(chunk: &Chunk, x: usize, z: usize) -> Option<usize> {
         for y in (0..S).rev() {
             if chunk.materials[Self::idx(x, y, z)] != VoxelMaterial::Air {
@@ -61,11 +52,6 @@ impl ThermalErosionSolver {
             }
         }
         None
-    }
-
-    /// Recompute the height of a single column after modification.
-    fn recompute_height(chunk: &Chunk, x: usize, z: usize) -> Option<usize> {
-        Self::column_height(chunk, x, z)
     }
 }
 
@@ -85,84 +71,108 @@ impl DiffusionSolver for ThermalErosionSolver {
         let mut cells_modified: u64 = 0;
         let mut material_transferred: f32 = 0.0;
 
-        // Snapshot column heights upfront so we don read mutated state.
-        // None = all-air column
-        let mut heights = [[None::<usize>; S]; S];
+        // ── Phase 1: snapshot ALL column heights before any mutation ───────
+        let mut heights: Vec<Option<usize>> = vec![None; S * S];
         for z in 0..S {
             for x in 0..S {
-                heights[x][z] = Self::column_height(chunk, x, z);
+                heights[Self::hidx(x, z)] = Self::column_height(chunk, x, z);
             }
         }
 
         let neighbors_2d: [(i32, i32); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
 
+        // ── Phase 2: collect events using ONLY the frozen snapshot ─────────
+        // One source per destination per step — tracked with is_destination.
+        // One event per source — a source can only donate once per step.
+        let mut is_destination: Vec<bool> = vec![false; S * S];
+        let mut is_source: Vec<bool> = vec![false; S * S];
+        let mut events: Vec<(usize, usize, usize, usize, VoxelMaterial)> = Vec::new();
+
         for z in 0..S {
             for x in 0..S {
-                let Some(src_h) = heights[x][z] else {
-                    continue; // no material to erode
-                };
-
-                //Only erode erodable materials at the surface
-                let src_top_idx = Self::idx(x, src_h, z);
-                if !self.is_erodable(chunk.materials[src_top_idx]) {
+                // Skip if already targeted as destination or used as source
+                if is_source[Self::hidx(x, z)] {
                     continue;
                 }
 
-                // Find the steepest downhill neighbor
-                let mut steepest_diff = self.talus_threshold;
-                let mut steepest_neighbor: Option<(usize, usize)> = None;
+                let Some(src_h) = heights[Self::hidx(x, z)] else {
+                    continue;
+                };
 
-                for (dx, dz) in neighbors_2d {
+                let src_top_idx = Self::idx(x, src_h, z);
+                let mat = chunk.materials[src_top_idx];
+                if !self.is_erodable(mat) {
+                    continue;
+                }
+
+                // Find steepest eligible downhill neighbor
+                let mut steepest_diff = self.talus_threshold;
+                let mut best: Option<(usize, usize)> = None;
+
+                for &(dx, dz) in &neighbors_2d {
                     let nx = x as i32 + dx;
                     let nz = z as i32 + dz;
-
-                    // Stay within chunk bounds (cross-chunk handling in Task 3.4)
                     if nx < 0 || nx >= S as i32 || nz < 0 || nz >= S as i32 {
                         continue;
                     }
                     let (nx, nz) = (nx as usize, nz as usize);
 
-                    let dst_h = heights[nx][nz].unwrap_or(0);
-                    // Use signed diff: positive means src is taller
+                    if is_destination[Self::hidx(nx, nz)] {
+                        continue;
+                    }
+
+                    // Only erode toward columns that have solid ground —
+                    // eroding into a fully empty column means material falls
+                    // into void, which is unphysical at this stage.
+                    let Some(dst_h) = heights[Self::hidx(nx, nz)] else {
+                        continue;
+                    };
+
                     let diff = src_h as f32 - dst_h as f32;
 
                     if diff > steepest_diff {
                         steepest_diff = diff;
-                        steepest_neighbor = Some((nx, nz));
+                        best = Some((nx, nz));
                     }
                 }
 
-                let Some((dst_x, dst_z)) = steepest_neighbor else {
-                    continue;
-                };
+                let Some((dst_x, dst_z)) = best else { continue };
 
-                // Move one voxel from top of src to top of dst.
-                // erosion_rate scales how aggressively we erode; we use it as
-                // a probability weight — always move at least one voxel when
-                // the threshold is exceeded (rate > 0 guarantees movement).
-                let moved_mat = chunk.materials[src_top_idx];
-
-                // Remove voxel from source top
-                chunk.materials[src_top_idx] = VoxelMaterial::Air;
-
-                // Place on top of destination column
-                let dst_h = heights[dst_x][dst_z].unwrap_or(0);
-                let new_dst_h = dst_h + 1;
-
-                if new_dst_h < S {
-                    let dst_idx = Self::idx(dst_x, new_dst_h, dst_z);
-                    chunk.materials[dst_idx] = moved_mat;
-                    heights[dst_x][dst_z] = Some(new_dst_h);
-                }
-                // If new_dst_h >= S: voxel exits chunk top — Task 3.4 handles
-
-                // Update source height
-                heights[x][z] = Self::recompute_height(chunk, x, z);
-
-                chunk.dirty = true;
-                cells_modified += 1;
-                material_transferred += 1.0;
+                is_source[Self::hidx(x, z)] = true;
+                is_destination[Self::hidx(dst_x, dst_z)] = true;
+                events.push((x, z, dst_x, dst_z, mat));
             }
+        }
+
+        // ── Phase 3: apply events ──────────────────────────────────────────
+        for (src_x, src_z, dst_x, dst_z, mat) in events {
+            let src_h = match heights[Self::hidx(src_x, src_z)] {
+                Some(h) => h,
+                None => continue,
+            };
+            let Some(dst_h) = heights[Self::hidx(dst_x, dst_z)] else {
+                continue;
+            };
+
+            // Defensive: verify source still has material (should always be true)
+            let src_idx = Self::idx(src_x, src_h, src_z);
+            if chunk.materials[src_idx] == VoxelMaterial::Air {
+                continue;
+            }
+
+            // Remove voxel from source surface
+            chunk.materials[src_idx] = VoxelMaterial::Air;
+
+            // Place voxel on first air slot above destination surface
+            let new_dst_h = dst_h + 1;
+            if new_dst_h < S {
+                let dst_idx = Self::idx(dst_x, new_dst_h, dst_z);
+                chunk.materials[dst_idx] = mat;
+            }
+
+            chunk.dirty = true;
+            cells_modified += 1;
+            material_transferred += 1.0;
         }
 
         DiffusionResult {
