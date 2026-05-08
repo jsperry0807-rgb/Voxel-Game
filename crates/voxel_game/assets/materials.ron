@@ -1,0 +1,22 @@
+(
+    materials: [
+        (
+            name: "Stone",
+            material: Stone,
+            texture_top: 0,
+            texture_side: 0,
+            texture_bottom: 0,
+            hardness: 5.0,
+            diffusion_coeff: 0.01,
+        ),
+        (
+            name: "Dirt",
+            material: Dirt,
+            texture_top: 1,
+            texture_side: 1,
+            texture_bottom: 1,
+            hardness: 1.0,
+            diffusion_coeff: 0.1,
+        ),
+    ]
+)

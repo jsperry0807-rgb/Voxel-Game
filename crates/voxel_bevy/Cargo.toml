@@ -7,3 +7,5 @@ edition = "2024"
 voxel_core = { path = "../voxel_core", features = ["bevy"] }
 bevy = "0.18"
 bevy_mesh = "0.18"
+bevy_common_assets = { version = "0.16", features = ["ron"] }
+serde = { version = "1", features = ["derive"] }

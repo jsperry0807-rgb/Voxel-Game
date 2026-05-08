@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use bevy::render::RenderPlugin;
 use bevy::render::settings::{Backends, RenderCreation, WgpuSettings};
 use bevy::window::WindowResolution;
-use voxel_bevy::VoxelBevyPlugin;
+use voxel_bevy::{VoxelBevyPlugin, assets::MaterialDefinitions};
 use voxel_core::{
     chunk::Chunk,
     coordinate::{ChunkCoordinate, VoxelIndex},
@@ -10,7 +10,26 @@ use voxel_core::{
     world::World,
 };
 
+#[derive(Resource)]
+#[allow(dead_code)]
+struct MaterialsHandle(Handle<MaterialDefinitions>);
+
 fn main() {
+    // Optional: keep panic hook for debugging; remove if you want.
+    std::panic::set_hook(Box::new(|info| {
+        eprintln!("==================== PANIC ====================");
+        eprintln!("{}", info);
+        if let Some(location) = info.location() {
+            eprintln!(
+                "  at {}:{}:{}",
+                location.file(),
+                location.line(),
+                location.column()
+            );
+        }
+        eprintln!("===============================================");
+    }));
+
     App::new()
         .add_plugins(
             DefaultPlugins
@@ -31,18 +50,21 @@ fn main() {
                 }),
         )
         .add_plugins(VoxelBevyPlugin)
-        .add_systems(Startup, (setup_camera, seed_test_world))
+        .add_systems(Startup, (setup_camera, seed_test_world, load_materials))
         .run();
 }
 
+fn load_materials(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let handle = asset_server.load("materials.ron");
+    commands.insert_resource(MaterialsHandle(handle));
+}
+
 fn setup_camera(mut commands: Commands) {
-    // Orbit-style starting position looking at chunk (0,0,0) centre
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(48.0, 48.0, 80.0).looking_at(Vec3::new(16.0, 16.0, 16.0), Vec3::Y),
     ));
 
-    // Directional light so PBR shading is visible
     commands.spawn((
         DirectionalLight {
             illuminance: 10_000.0,
@@ -58,14 +80,10 @@ fn setup_camera(mut commands: Commands) {
     ));
 }
 
-/// Populate the world with a few test chunks so there's something to render.
 fn seed_test_world(mut world: ResMut<World>) {
-    // 3×3 flat terrain, 2 chunks tall
     for cx in -1..=1_i32 {
         for cz in -1..=1_i32 {
-            // Bottom layer: solid stone
             let mut ground = Chunk::new_filled(VoxelMaterial::Stone);
-            // Top 2 rows of the ground chunk are grass
             for x in 0..32_u32 {
                 for z in 0..32_u32 {
                     ground.set(VoxelIndex::new(x, 30, z), VoxelMaterial::Dirt);
@@ -74,7 +92,6 @@ fn seed_test_world(mut world: ResMut<World>) {
             }
             world.insert_chunk(ChunkCoordinate::new(cx, 0, cz), ground);
 
-            // Upper layer: air (still insert so neighbours cull correctly)
             world.insert_chunk(
                 ChunkCoordinate::new(cx, 1, cz),
                 Chunk::new_filled(VoxelMaterial::Air),

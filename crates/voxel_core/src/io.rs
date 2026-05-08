@@ -1,18 +1,17 @@
-use std::{
-    fs,
-    io::{self, BufWriter},
-    path::{Path, PathBuf},
-};
-
-use bytemuck::{Pod, Zeroable};
-use serde::{Deserialize, Serialize};
-use thiserror::Error;
-
 use crate::{
     chunk::Chunk,
     coordinate::ChunkCoordinate,
     voxel::{VoxelDiffusionState, VoxelMaterial},
 };
+use bincode::error::{DecodeError, EncodeError};
+use bytemuck::{Pod, Zeroable};
+use serde::{Deserialize, Serialize};
+use std::{
+    fs,
+    io::{self, BufWriter},
+    path::{Path, PathBuf},
+};
+use thiserror::Error;
 
 // ── Error type ─────────────────────────────────────────────────────────────────
 
@@ -21,17 +20,15 @@ pub enum ChunkIoError {
     #[error("I/O error: {0}")]
     Io(#[from] io::Error),
 
-    #[error("Serialization error: {0}")]
-    Encode(bincode::error::EncodeError),
+    #[error("Encoding error: {0}")]
+    Encode(#[from] EncodeError),
 
-    #[error("Deserialization error: {0}")]
-    Decode(bincode::error::DecodeError),
+    #[error("Decoding error: {0}")]
+    Decode(#[from] DecodeError),
 
-    #[error("Compression error: {0}")]
-    Compress(io::Error),
-
-    #[error("Decompression error: {0}")]
-    Decompress(io::Error),
+    // Single variant for both compression & decompression (avoids conflict)
+    #[error("Compression/decompression error: {0}")]
+    Compression(io::Error),
 
     #[error("Version mismatch: expected {expected}, got {found}")]
     VersionMismatch { expected: u16, found: u16 },
@@ -40,17 +37,7 @@ pub enum ChunkIoError {
     Corrupt(String),
 }
 
-impl From<bincode::error::EncodeError> for ChunkIoError {
-    fn from(e: bincode::error::EncodeError) -> Self {
-        Self::Encode(e)
-    }
-}
-
-impl From<bincode::error::DecodeError> for ChunkIoError {
-    fn from(e: bincode::error::DecodeError) -> Self {
-        Self::Decode(e)
-    }
-}
+// No manual From impls needed – #[from] generates them.
 
 // ── On-disk format ─────────────────────────────────────────────────────────────
 
@@ -118,7 +105,7 @@ pub fn save_chunk(path: &Path, chunk: &Chunk, coord: ChunkCoordinate) -> Result<
     let materials_u16: Vec<u16> = chunk.materials.iter().map(|&m| m as u16).collect();
     let materials_bytes = bytemuck::cast_slice::<u16, u8>(&materials_u16);
     let materials_compressed =
-        zstd::encode_all(materials_bytes, 3).map_err(ChunkIoError::Compress)?;
+        zstd::encode_all(materials_bytes, 3).map_err(ChunkIoError::Compression)?; // changed
 
     // Serialize diffusion state if present
     let diffusion_compressed = chunk
@@ -128,7 +115,7 @@ pub fn save_chunk(path: &Path, chunk: &Chunk, coord: ChunkCoordinate) -> Result<
             let raw: Vec<DiffusionStateRaw> =
                 diff.iter().copied().map(DiffusionStateRaw::from).collect();
             let bytes = bytemuck::cast_slice::<DiffusionStateRaw, u8>(&raw);
-            zstd::encode_all(bytes, 3).map_err(ChunkIoError::Compress)
+            zstd::encode_all(bytes, 3).map_err(ChunkIoError::Compression) // changed
         })
         .transpose()?;
 
@@ -169,7 +156,7 @@ pub fn load_chunk(path: &Path) -> Result<(Chunk, ChunkCoordinate), ChunkIoError>
 
     // Decompress and deserialize materials
     let mat_bytes = zstd::decode_all(saved.materials_compressed.as_slice())
-        .map_err(ChunkIoError::Decompress)?;
+        .map_err(ChunkIoError::Compression)?; // changed
 
     if mat_bytes.len() % 2 != 0 {
         return Err(ChunkIoError::Corrupt(
@@ -188,7 +175,7 @@ pub fn load_chunk(path: &Path) -> Result<(Chunk, ChunkCoordinate), ChunkIoError>
     let diffusion = saved
         .diffusion_compressed
         .map(|blob| -> Result<Box<[VoxelDiffusionState]>, ChunkIoError> {
-            let bytes = zstd::decode_all(blob.as_slice()).map_err(ChunkIoError::Decompress)?;
+            let bytes = zstd::decode_all(blob.as_slice()).map_err(ChunkIoError::Compression)?; // changed
 
             let raw_size = std::mem::size_of::<DiffusionStateRaw>();
             if bytes.len() % raw_size != 0 {
