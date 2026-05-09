@@ -2,7 +2,7 @@
     materials: [
         (
             name: "Stone",
-            material: 1,   // VoxelMaterial::Stone
+            material: Stone,
             texture_top: 0,
             texture_side: 0,
             texture_bottom: 0,
@@ -11,7 +11,7 @@
         ),
         (
             name: "Dirt",
-            material: 2,   // VoxelMaterial::Dirt
+            material: Dirt,
             texture_top: 1,
             texture_side: 1,
             texture_bottom: 1,
@@ -20,7 +20,7 @@
         ),
         (
             name: "Grass",
-            material: 4,   // VoxelMaterial::Grass
+            material: Grass,
             texture_top: 2,
             texture_side: 3,
             texture_bottom: 1,

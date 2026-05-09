@@ -9,3 +9,5 @@ bevy = "0.18"
 bevy_mesh = "0.18"
 bevy_common_assets = { version = "0.16", features = ["ron"] }
 serde = { version = "1", features = ["derive"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+wgpu-types = "27.0.1"

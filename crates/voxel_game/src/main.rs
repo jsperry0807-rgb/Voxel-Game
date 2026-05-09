@@ -47,6 +47,10 @@ fn main() {
                         ..default()
                     }),
                     ..default()
+                })
+                .set(AssetPlugin {
+                    file_path: "assets".to_string(),
+                    ..default()
                 }),
         )
         .add_plugins(VoxelBevyPlugin)
@@ -62,7 +66,7 @@ fn load_materials(mut commands: Commands, asset_server: Res<AssetServer>) {
 fn setup_camera(mut commands: Commands) {
     commands.spawn((
         Camera3d::default(),
-        Transform::from_xyz(48.0, 48.0, 80.0).looking_at(Vec3::new(16.0, 16.0, 16.0), Vec3::Y),
+        Transform::from_xyz(80.0, 80.0, 140.0).looking_at(Vec3::new(48.0, 0.0, 48.0), Vec3::Y),
     ));
 
     commands.spawn((

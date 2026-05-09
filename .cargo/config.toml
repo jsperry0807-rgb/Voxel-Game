@@ -31,3 +31,6 @@ opt-level = 2
 
 [profile.dev.package.block-mesh]
 opt-level = 2
+
+[env]
+BEVY_ASSET_ROOT = "crates/voxel_game"
