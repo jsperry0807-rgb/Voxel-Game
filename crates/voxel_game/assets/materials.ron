@@ -18,5 +18,14 @@
             hardness: 1.0,
             diffusion_coeff: 0.1,
         ),
+        (
+            name: "Grass",
+            material: Grass,
+            texture_top: 2,
+            texture_side: 3,
+            texture_bottom: 1,
+            hardness: 0.5,
+            diffusion_coeff: 0.2,
+        ),
     ]
 )

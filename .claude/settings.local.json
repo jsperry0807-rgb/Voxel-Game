@@ -3,7 +3,9 @@
     "allow": [
       "Bash(rustc --version)",
       "Bash(cargo --version)",
-      "WebSearch"
+      "WebSearch",
+      "PowerShell(cargo run *)",
+      "PowerShell(cargo build *)"
     ]
   }
 }

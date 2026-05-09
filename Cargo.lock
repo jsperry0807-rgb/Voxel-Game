@@ -5135,8 +5135,10 @@ dependencies = [
  "bevy",
  "bevy_common_assets",
  "bevy_mesh",
+ "image",
  "serde",
  "voxel_core",
+ "wgpu-types",
 ]
 
 [[package]]

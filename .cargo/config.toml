@@ -1,3 +1,7 @@
+[build]
+# Use native CPU instructions for better runtime performance
+rustflags = ["-C", "target-cpu=native"]
+
 [target.x86_64-unknown-linux-gnu]
 linker = "clang"
 rustflags = ["-C", "link-arg=-fuse-ld=lld"]
@@ -7,3 +11,26 @@ rustflags = ["-C", "link-arg=-fuse-ld=lld"]
 
 [target.x86_64-pc-windows-msvc]
 linker = "rust-lld.exe"
+
+[profile.dev]
+# Reduce debug info for faster linking
+debug = 1
+# More codegen units improves parallelism (faster compile)
+codegen-units = 256
+# Incremental compilation (already on by default)
+incremental = true
+# Disable LTO for dev builds (much faster linking)
+lto = "off"
+
+# Compile Bevy with optimizations even in debug mode – faster runtime without sacrificing compile time much
+[profile.dev.package.bevy]
+opt-level = 2
+
+[profile.dev.package.wgpu]
+opt-level = 2
+
+[profile.dev.package.block-mesh]
+opt-level = 2
+
+[env]
+BEVY_ASSET_ROOT = "crates/voxel_game"
