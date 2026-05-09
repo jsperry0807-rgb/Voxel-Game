@@ -10,9 +10,16 @@ use voxel_core::{
     world::World,
 };
 
+use crate::{
+    audio::VoxelAudioPlugin,
+    render::{MeshCache, process_dirty_chunks, upload_generated_meshes},
+};
+
 #[derive(Resource)]
 #[allow(dead_code)]
 struct MaterialsHandle(Handle<MaterialDefinitions>);
+
+pub struct VoxelBevyPlugin;
 
 fn main() {
     // Optional: keep panic hook for debugging; remove if you want.
@@ -54,6 +61,7 @@ fn main() {
                 }),
         )
         .add_plugins(VoxelBevyPlugin)
+        .add_plugins(VoxelAudioPlugin)
         .add_systems(Startup, (setup_camera, seed_test_world, load_materials))
         .run();
 }
