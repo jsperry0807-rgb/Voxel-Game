@@ -26,14 +26,14 @@ pub struct TimeResource {
 impl TimeResource {
     pub fn new() -> Self {
         let mut t = Self {
-            current_tick: 0,
+            current_tick: 6 * 3600 * TICKS_PER_SECOND, // Start at 6:00 AM
             year: 1,
             day: 1,
-            hour: 6,
-            minute: 0,
-            second: 0,
+            hour: 0,   // recalculate will set this
+            minute: 0, // recalculate will set this
+            second: 0, // recalculate will set this
             season: Season::Spring,
-            is_daytime: true,
+            is_daytime: false,
             solar_angle: 0.0,
         };
         t.recalculate();
@@ -59,7 +59,7 @@ impl TimeResource {
         self.second = (seconds_in_day % 60) as u32;
 
         self.day = ((total_seconds / 86400) + 1) as u32;
-        self.year = ((total_seconds / 86400 * 360) + 1) as u32;
+        self.year = ((total_seconds / (86400 * 360)) + 1) as u32;
 
         self.is_daytime = self.hour >= 6 && self.hour < 18;
         self.solar_angle = self.calculate_solar_angle();

@@ -4,8 +4,8 @@ use voxel_core::game_tick::TICKS_PER_SECOND;
 #[test]
 fn initial_state() {
     let t = TimeResource::new();
-    assert_eq!(t.current_tick, 0);
     assert_eq!(t.hour, 6);
+    assert_eq!(t.minute, 0);
     assert!(t.is_daytime);
     assert_eq!(t.season, Season::Spring);
 }
