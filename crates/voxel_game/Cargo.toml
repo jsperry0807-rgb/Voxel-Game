@@ -1,9 +1,0 @@
-[package]
-name = "voxel_game"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-voxel_bevy = { path = "../voxel_bevy" }
-voxel_core = { path = "../voxel_core", features = ["bevy"] }
-bevy = "0.18"

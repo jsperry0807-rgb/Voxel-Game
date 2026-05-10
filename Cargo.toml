@@ -1,3 +1,9 @@
 [workspace]
 resolver = "2"
-members = ["crates/voxel_core", "crates/voxel_bevy", "crates/voxel_game"]
+members = [
+    "crates/core",
+    "crates/game",
+    "crates/renderer",
+    "crates/time",
+    "crates/worldgen",
+]
