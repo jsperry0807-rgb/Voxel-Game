@@ -22,3 +22,9 @@ impl GenOutput {
         y * GEN_CHUNK_W * GEN_CHUNK_W + z * GEN_CHUNK_W + x
     }
 }
+
+impl Default for GenOutput {
+    fn default() -> Self {
+        Self::new()
+    }
+}

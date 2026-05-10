@@ -83,3 +83,9 @@ impl TimeResource {
         }
     }
 }
+
+impl Default for TimeResource {
+    fn default() -> Self {
+        Self::new()
+    }
+}
