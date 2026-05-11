@@ -1,5 +1,5 @@
 use crate::{Season, TimeResource};
-use voxel_core::game_tick::TICKS_PER_SECOND;
+use core::game_tick::TICKS_PER_SECOND;
 
 #[test]
 fn initial_state() {

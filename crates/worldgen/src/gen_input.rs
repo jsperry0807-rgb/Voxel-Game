@@ -1,5 +1,5 @@
-use voxel_core::chunk_pos::ChunkPos;
-use voxel_core::game_tick::GameTick;
+use core::chunk_pos::ChunkPos;
+use core::game_tick::GameTick;
 
 #[derive(Clone, Debug)]
 pub struct GenInput {

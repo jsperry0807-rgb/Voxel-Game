@@ -1,6 +1,6 @@
 use bevy::prelude::*;
+use core::game_tick::{DAYS_PER_YEAR, GameTick, TICKS_PER_SECOND};
 use serde::{Deserialize, Serialize};
-use voxel_core::game_tick::{DAYS_PER_YEAR, GameTick, TICKS_PER_SECOND};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Season {

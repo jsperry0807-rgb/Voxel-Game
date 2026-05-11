@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 renderer = { path = "../renderer" }
-voxel_core = { path = "../core", package = "core" }
+core = { path = "../core", package = "core" }
 time = { path = "../time" }
 worldgen = { path = "../worldgen" }
 bevy = { version = "0.18", default-features = false, features = [
@@ -17,3 +17,7 @@ bevy = { version = "0.18", default-features = false, features = [
     "bevy_winit",
     "bevy_pbr",
 ] }
+
+[features]
+default = []
+dev = ["bevy/dynamic_linking"]

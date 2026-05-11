@@ -1,5 +1,5 @@
+use core::block_id::BlockId;
 use serde::{Deserialize, Serialize};
-use voxel_core::block_id::BlockId;
 
 pub const GEN_CHUNK_W: usize = 16;
 pub const GEN_CHUNK_H: usize = 256;

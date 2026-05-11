@@ -10,4 +10,11 @@ members = [
     "crates/thermodynamics",
     "crates/hydrology",
     "crates/atmosphere",
+    "crates/geology",
 ]
+
+[profile.dev]
+opt-level = 1 # small speedup vs 0, much faster than 3
+
+[profile.dev.package."*"]
+opt-level = 3 # dependencies stay fast (compiled once anyway)
