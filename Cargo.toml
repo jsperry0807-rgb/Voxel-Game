@@ -6,4 +6,8 @@ members = [
     "crates/renderer",
     "crates/time",
     "crates/worldgen",
+    "crates/noise",
+    "crates/thermodynamics",
+    "crates/hydrology",
+    "crates/atmosphere",
 ]

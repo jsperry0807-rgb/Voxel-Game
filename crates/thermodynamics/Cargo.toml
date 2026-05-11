@@ -1,0 +1,11 @@
+[package]
+name = "thermodynamics"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+core = { path = "../core", features = ["bevy"] }
+bevy = "0.18"
+ndarray = { version = "0.16", features = ["rayon"] }
+rayon = "1.12"
+glam = { version = "0.32.1", features = ["serde"] }
