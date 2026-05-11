@@ -5,7 +5,7 @@ use noise::NoiseGenerator;
 
 #[derive(Clone)]
 pub struct GeologyGenerator {
-    seed: u64,
+    _seed: u64,
     pub formations: Vec<StratigraphicFormation>,
     folds: Vec<Fold>,
     faults: Vec<Fault>,
@@ -56,7 +56,7 @@ impl GeologyGenerator {
             .collect();
 
         Self {
-            seed,
+            _seed: seed,
             formations,
             folds,
             faults,

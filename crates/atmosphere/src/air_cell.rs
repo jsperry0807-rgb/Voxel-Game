@@ -33,7 +33,7 @@ impl AirCell {
 
     pub fn dew_point(&self) -> f32 {
         let t = self.temperature - 273.15;
-        let h = self.humidity.min(1.0).max(1e-6);
+        let h = self.humidity.clamp(1e-6, 1.0);
         let gamma = (17.27 * t) / (237.7 + t) + h.ln();
         (237.7 * gamma) / (17.27 - gamma) + 273.15
     }
