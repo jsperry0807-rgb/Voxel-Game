@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-voxel_core = { path = "../core", package = "core", features = ["bevy"] }
+core = { path = "../core", package = "core", features = ["bevy"] }
 bevy = { version = "0.18", default-features = false, features = [
     "bevy_core_pipeline",
     "bevy_render",

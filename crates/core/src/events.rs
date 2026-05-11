@@ -67,6 +67,7 @@ pub struct WeatherChangeEvent {
     pub wind_direction: Vec3,
 }
 
+#[cfg_attr(feature = "bevy", derive(bevy::prelude::Event))]
 #[derive(Debug, Clone)]
 pub struct EarthquakeEvent {
     pub epicenter: Vec3,

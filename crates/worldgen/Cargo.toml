@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy      = "0.18"
-voxel_core = { path = "../core", package = "core" }
-time      = { path = "../time" }
-noise     = "0.9"
-serde     = { version = "1.0", features = ["derive"] }
-rand      = { version = "0.8", features = ["small_rng"] }
+bevy = "0.18"
+core = { path = "../core", package = "core" }
+time = { path = "../time" }
+noise = "0.9"
+serde = { version = "1.0", features = ["derive"] }
+rand = { version = "0.8", features = ["small_rng"] }

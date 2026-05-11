@@ -1,0 +1,12 @@
+[package]
+name = "geology"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+core = { path = "../core", features = ["bevy"] }
+noise = { path = "../noise" }
+bevy = "0.18"
+glam = "0.32.1"
+rand = "0.8"
+rand_xoshiro = "0.6"
