@@ -9,15 +9,11 @@ use bevy::prelude::*;
 use core::sim_tick::SimTick;
 
 #[derive(Resource)]
+#[derive(Default)]
 pub struct AtmosphereWorld {
     pub grid: AtmosphereGrid,
 }
 
-impl Default for AtmosphereWorld {
-    fn default() -> Self {
-        Self { grid: AtmosphereGrid::new() }
-    }
-}
 
 impl AtmosphereWorld {
     pub fn rainfall_at(&self, world_pos: glam::Vec3) -> f32 {

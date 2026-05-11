@@ -29,7 +29,7 @@ impl SimScale {
 
     pub fn should_run_at_tick(&self, tick: u64) -> bool {
         let s = self.tick_stride() as u64;
-        s == u32::MAX as u64 || tick % s == 0
+        s == u32::MAX as u64 || tick.is_multiple_of(s)
     }
 
     pub fn coarsening_factor(&self) -> u32 {
